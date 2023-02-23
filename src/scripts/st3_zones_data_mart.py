@@ -19,16 +19,16 @@ def main():
 
         #Определяем города событий
 
-        df_city = spark.read.parquet('{events_base_path}/city_parq/city.parquet')
-        df = spark.read.parquet('{events_base_path}/events_m') \
-                    .where("date between {dt_first_month} and {dt}")
+        df_city = spark.read.parquet(f'{events_base_path}/city_parq/city.parquet')
+        df = spark.read.parquet(f'{events_base_path}/events_m') \
+                    .where(f"date between {dt_first_month} and {dt}")
 
         df = df.crossJoin(df_city.withColumnRenamed('lat', 'city_lat').withColumnRenamed('lng', 'city_lon'))
 
         df = df.withColumn("rng", F.lit(2*6371) * F.asin(F.sqrt( \
-                                          sqr(F.sin((F.radians('city_lat') - F.radians('lat'))/F.lit(2)) + \
+                                          F.pow((F.sin((F.radians('city_lat') - F.radians('lat'))/F.lit(2)),2) + \
                                             F.cos(F.radians('lat'))*F.cos(F.radians('city_lat'))* \
-                                            sqr(F.sin((F.radians('city_lon') - F.radians('lon'))/F.lit(2)) \
+                                            F.pow((F.sin((F.radians('city_lon') - F.radians('lon'))/F.lit(2)),2) \
                                               ))))) 
 
         windowCitiesRank = Window.partitionBy("event").orderBy(F.col("rng").asc())
@@ -54,9 +54,9 @@ def main():
 
         df_events_all = df_with_cities.union(df_user_registration)
 
-        #Рассчитываем статичстики за неделю и месяц
+        #Рассчитываем статистики за неделю и месяц
         df_cities_month_events = df_events_all \
-                                .withColumn("month", F.month("date")) \
+                                .withColumn("month", F.trunc(F.col("date"), 'month')) \
                                 .groupBy("zone_id", "month") \
                                 .pivot("event_type", ['message', 'reaction', 'subscription', 'registration']) \
                                 .count() \
@@ -64,10 +64,13 @@ def main():
                                 .withColumnRenamed('reaction', 'month_reaction') \
                                 .withColumnRenamed('subscription', 'month_subscription') \
                                 .withColumnRenamed('registration', 'month_user')
-
+#Немного не понял комментарий по поводу исправления для недель
+#Насколько я понял задачу, данные нужны только за последнюю неделю
+#Возможно, я не правильно понимаю условие
+#Можешь, пожалуйста, немного подробнее описать необходимое исправление для массива по неделям?
         df_events_all_week = df_events_all \
                             .withColumn("week", F.weekofyear("date")) \
-                            .where("week = {week_agg}")
+                            .where(f"week = {week_agg}")
 
         df_cities_week_events = df_events_all_week \
                                 .groupBy("zone_id", "week") \
@@ -78,8 +81,8 @@ def main():
                                 .withColumnRenamed('subscription', 'week_subscription') \
                                 .withColumnRenamed('registration', 'week_user')
 
-        df_zones_stat = df_cities_month_events.join(df_cities_week_events, ["zone_id"], "full")
-        df_zones_stat.write.parquet('{output_base_path}/df_zones={dt}')
+        df_zones_stat = df_cities_month_events.join(df_cities_week_events, ["zone_id"], "full").na.fill(0)
+        df_zones_stat.write.parquet(f'{output_base_path}/df_zones={dt}')
 
 
 if __name__ == "__main__":

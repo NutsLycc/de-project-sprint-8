@@ -16,9 +16,9 @@ def main():
 
         #Вычисляем координаты последнего местонахождения пользователя
     
-        df_mess = spark.read.parquet('{events_base_path}}/events_m') \
+        df_mess = spark.read.parquet(f'{events_base_path}/events_m') \
                                 .filter(F.col("event_type") == "message") \
-                                .where("date < {dt}") \
+                                .where(f"date < {dt}") \
                                 .selectExpr("event.message_from as user_id", "lat", "lon", "date")
 
         windowLastMess = Window.partitionBy("user_id").orderBy(F.col("date").desc())
@@ -30,17 +30,17 @@ def main():
 
         #Вычисляем каналы, на которые подписаны пользователи
 
-        df_user_subs = spark.read.parquet('{events_base_path}}/events_m') \
+        df_user_subs = spark.read.parquet(f'{events_base_path}}/events_m') \
                         .filter(F.col("event_type") == "subscription") \
-                        .where("date < {dt} and subscription_channel is not null") \
+                        .where(f"date < {dt} and subscription_channel is not null") \
                         .selectExpr("event.user as user_id", "event.subscription_channel as channel") \
                         .distinct()
                 
         #Вычисляем для пользователя всех, с кем он переписывался
 
-        df_user_pairs = spark.read.parquet('{events_base_path}}/events_m') \
+        df_user_pairs = spark.read.parquet(f'{events_base_path}}/events_m') \
                             .filter(F.col("event_type") == "message") \
-                            .where("date < {dt}") 
+                            .where(f"date < {dt}") 
 
         df_users_from_to = df_user_pairs \
                         .selectExpr("event.message_from as user_left", "event.message_to as user_right") \
@@ -91,10 +91,10 @@ def main():
 
         df_users_no_messages_distance = df_users_no_messages_coord\
                                     .withColumn("rng", F.lit(2*6371) * F.asin(F.sqrt( \
-                                        sqr(F.sin((F.radians('left_lat') - F.radians('right_lat'))/F.lit(2)) + \
+                                        F.pow(F.sin((F.radians('left_lat') - F.radians('right_lat'))/F.lit(2)),2) + \
                                             F.cos(F.radians('right_lat'))*F.cos(F.radians('left_lat'))* \
-                                            sqr(F.sin((F.radians('left_lon') - F.radians('right_lon'))/F.lit(2)) \
-                                            ))))) 
+                                            F.pow(F.sin((F.radians('left_lon') - F.radians('right_lon'))/F.lit(2)),2) \
+                                            )))
 
         #Собираем окончательные рекомендации(расстояние меньше километра)
         df_users_recomendations = df_users_no_messages_distance \
@@ -102,7 +102,7 @@ def main():
 
         #Дополняем данными из ранее посчитанных данных о пользователях(т.к. расстояние между пользователями меньше 1 км, пренебрегаем вероятностью нахождения в разных городах
         #  и считаем город по левому пользователю).
-        df_users = spark.read.parquet('{output_base_path}/users={dt}')
+        df_users = spark.read.parquet(f'{output_base_path}/users={dt}')
 
         df_users_recomendations = df_users_recomendations \
                                 .join(df_users, df_users.user_id == df_users_recomendations.user_left, "left") \
@@ -110,7 +110,7 @@ def main():
                                 .withColumn("processed_dttm", F.lit("dt")) \
                                 .selectExpr("user_left", "user_right", "processed_dttm", "act_city as zone_id", "local_time")
 
-        df_users_recomendations.write.parquet('{output_base_path}/user_recomendations={dt}')
+        df_users_recomendations.write.parquet(f'{output_base_path}/user_recomendations={dt}')
 
 if __name__ == "__main__":
     main()

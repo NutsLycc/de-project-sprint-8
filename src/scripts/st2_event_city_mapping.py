@@ -6,8 +6,6 @@ from pyspark.sql.window import Window
 import datetime 
 
 
-def sqr(a):
-    return a*a
 
 def find_home_city(cities):
     prev_city = ""
@@ -51,17 +49,23 @@ def main():
         sc = SparkContext(conf=conf)
         spark = SQLContext(sc)
 
-        df_city = spark.read.parquet('{events_base_path}/city_parq/city.parquet')
-        df = spark.read.parquet('{events_base_path}/events_m') \
+#получаем массив городов с координатами, переложенный из csv в parquet
+#df = spark.read.option("header",True).options(delimiter=';').csv('/user/nutslyc/data/geo/city/')
+#new_df = df \
+#        .select("city","lat","lng",F.radians('lat').alias('lat_rad'), F.radians('lng').alias('lng_rad'))
+#new_df.write.parquet('/user/nutslyc/data/geo/city_parq/city.parquet')
+
+        df_city = spark.read.parquet(f'{events_base_path}/city_parq/city.parquet')
+        df = spark.read.parquet(f'{events_base_path}/events_m') \
                                 .filter(F.col("event_type") == "message") \
         
         df = df.crossJoin(df_city.withColumnRenamed('lat', 'city_lat').withColumnRenamed('lng', 'city_lon'))
 
         df = df.withColumn("rng", F.lit(2*6371) * F.asin(F.sqrt( \
-                                        sqr(F.sin((F.radians('city_lat') - F.radians('lat'))/F.lit(2)) + \
+                                        F.pow(F.sin((F.radians('city_lat') - F.radians('lat'))/F.lit(2)),2) + \
                                             F.cos(F.radians('lat'))*F.cos(F.radians('city_lat'))* \
-                                            sqr(F.sin((F.radians('city_lon') - F.radians('lon'))/F.lit(2)) \
-                                            ))))) 
+                                            F.pow(F.sin((F.radians('city_lon') - F.radians('lon'))/F.lit(2)), 2) \
+                                            )))
 
         windowCitiesRank = Window.partitionBy("event.message_id").orderBy(F.col("rng").asc())
 
@@ -86,13 +90,11 @@ def main():
         #домашний город пользователя. Если в один день пользователь отправил сообщение из нескольких городов, то считаем это прерыванием цепочки
         #т.к. по условию задачи пользователь не должен непрерывно находиться в одном и том же городе
         #для теста выбрано значение count == 3, т.к. использованы частичные данные. Для продуктивного решения необходимо заменить значение на 27
-        df_user_cities_group_dates = df_with_cities \
-                            .groupBy("user_id", "date", "city") \
-                            .count() \
-                            .orderBy(F.col("user_id"), F.col("date").desc())
 
-        df_user_cities_group = df_user_cities_group_dates \
-                                .drop("count")
+        df_user_cities_group = df_with_cities \
+                            .select("user_id", "date", "city") \
+                            .distinct() \
+                            .orderBy(F.col("user_id"), F.col("date").desc())
 
             
         find_home_city_udf = F.udf(lambda x:find_home_city(x))
@@ -112,13 +114,11 @@ def main():
         #df_user_cities.show()
 
         #количество посещенных городов
-        df_user_cities_group_dates = df_with_cities \
-                            .groupBy("user_id", "date", "city") \
-                            .count() \
-                            .orderBy(F.col("user_id"), F.col("date").desc())
 
-        df_user_cities_group = df_user_cities_group_dates \
-                                .drop("count", "message_id")
+        df_user_cities_group = df_with_cities \
+                            .select("user_id", "date", "city") \
+                            .distinct() \
+                            .orderBy(F.col("user_id"), F.col("date").desc())
 
         df_city_list = df_user_cities_group \
                     .orderBy(F.col("user_id"), F.col("date").desc()) \
@@ -138,13 +138,11 @@ def main():
         df_user_cities_travel = df_user_cities.join(df_user_count_city, ['user_id'], "full")
 
         #список городов в порядке посещения
-        df_user_cities_group_dates = df_with_cities \
-                            .groupBy("user_id", "date", "city") \
-                            .count() \
-                            .orderBy(F.col("user_id"), F.col("date").desc())
 
-        df_user_cities_group = df_user_cities_group_dates \
-                                .drop("count", "message_id")
+        df_user_cities_group = df_with_cities \
+                            .select("user_id", "date", "city") \
+                            .distinct() \
+                            .orderBy(F.col("user_id"), F.col("date").desc())
             
         travel_array_udf = F.udf(lambda x:travel_array(x))
 
