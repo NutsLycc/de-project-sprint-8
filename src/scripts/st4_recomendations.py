@@ -45,9 +45,9 @@ def main():
         df_users_from_to = df_user_pairs \
                         .selectExpr("event.message_from as user_left", "event.message_to as user_right") \
                         .distinct()
-
+#Есть ощущение что в прошлый раз я в принципе не увидел комментариев к этому скрипту:) Приношу извинения
         df_users_to_from = df_user_pairs \
-                        .selectExpr("event.message_from as user_left", "event.message_to as user_right") \
+                        .selectExpr("event.message_to as user_left", "event.message_from as user_right") \
                         .distinct()
 
         df_users_contacts = df_users_from_to \
@@ -67,13 +67,10 @@ def main():
                                     .distinct()
 
         #Вычисляем пары пользователей, которые никогда не общались
+#Согласен с коментарием, понял о чем речь и в чем у меня ошибка в логике, переделываю
+        df_users_no_messages = df_users_no_messages \
+                                .join(df_users_channel_contacts, ['left_user'], 'leftanti')
 
-        df_users_no_messages = df_users_contacts \
-                                .union(df_users_channel_contacts) \
-                                .groupBy("user_left", "user_right") \
-                                .count() \
-                                .filter(F.col("count" == 1)) \
-                                .select("user_left", "user_right")
 
         #записываем координаты нахождения пользователей из пар
 

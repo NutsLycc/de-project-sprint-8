@@ -54,6 +54,7 @@ def main():
 #new_df = df \
 #        .select("city","lat","lng",F.radians('lat').alias('lat_rad'), F.radians('lng').alias('lng_rad'))
 #new_df.write.parquet('/user/nutslyc/data/geo/city_parq/city.parquet')
+#я не использовал замену символов, т.к. эту часть сделал до - заменил в csv запятые на точки
 
         df_city = spark.read.parquet(f'{events_base_path}/city_parq/city.parquet')
         df = spark.read.parquet(f'{events_base_path}/events_m') \
